@@ -80,9 +80,6 @@ x-airflow-common:
     CLICKHOUSE_PORT: 8123
     CLICKHOUSE_USER: ${CLICKHOUSE_USER}
     CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-    S3_ENDPOINT_URL: http://minio:9000
-    AWS_ACCESS_KEY_ID: admin
-    AWS_SECRET_ACCESS_KEY: password
     BUCKET_NAME: ${BUCKET_NAME}
     OBJECT_KEY: ${OBJECT_KEY}
   volumes:
@@ -155,8 +152,8 @@ services:
       CLICKHOUSE_USER: "admin"
       CLICKHOUSE_PASSWORD: "password"
       CLICKHOUSE_DB: "default"
-    mem_limit: 4g
-    mem_reservation: 2g
+    mem_limit: 1500m
+    mem_reservation: 500m
     ulimits:
       nofile:
         soft: 262144
@@ -221,7 +218,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-    mem_limit: 4g
+    mem_limit: 1500m
     environment:
       <<: *airflow-common-env
       # Required to handle warm shutdown of the celery workers properly
