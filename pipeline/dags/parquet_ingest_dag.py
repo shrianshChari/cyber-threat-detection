@@ -14,19 +14,27 @@ load_dotenv()
 
 BUCKET_NAME = os.getenv("BUCKET_NAME")
 OBJECT_KEY = os.getenv("OBJECT_KEY")
-S3_ENDPOINT = os.getenv("S3_ENDPOINT_URL")
 AWS_REGION = os.getenv("AWS_DEFAULT_REGION", "us-west-1")
 
-def get_s3_storage_options():
+def get_aws_credentials():
     session = boto3.Session(region_name=AWS_REGION)
     credentials = session.get_credentials().get_frozen_credentials()
+    return credentials
 
-    return {
+def get_s3_storage_options():
+    credentials = get_aws_credentials()
+    storage_options = {
         "aws_access_key_id": credentials.access_key,
         "aws_secret_access_key": credentials.secret_key,
         "aws_session_token": credentials.token,
         "aws_region": AWS_REGION,
     }
+
+    endpoint_url = S3_ENDPOINT = os.getenv("S3_ENDPOINT_URL", "").strip()
+    if endpoint_url.startswith(('http://', 'https://')):
+        storage_options["aws_endpoint_url"] = endpoint_url
+
+    return storage_options
 
 CH_HOST = os.getenv("CLICKHOUSE_HOST", "localhost")
 CH_PORT = int(os.getenv("CLICKHOUSE_PORT", 8123))
@@ -67,16 +75,16 @@ def task_init_schema():
     client = get_clickhouse_client()
 
     # Generate S3 function URL for schema inference
-    s3_user = os.getenv("AWS_ACCESS_KEY_ID", "admin")
-    s3_pass = os.getenv("AWS_SECRET_ACCESS_KEY", "password")
-    s3_url = f"{S3_ENDPOINT}/{BUCKET_NAME}/{OBJECT_KEY}"
+    creds = get_aws_credentials()
+    s3_url = f"https://s3.{AWS_REGION}.amazonaws.com/{BUCKET_NAME}/{OBJECT_KEY}"
+    s3_function = f"s3('{s3_url}', '{creds.access_key}', '{creds.secret_key}', '{creds.token}', 'Parquet')"
 
     sql = f"""
     CREATE OR REPLACE TABLE default.logs_data
     ENGINE = MergeTree()
     ORDER BY tuple()
     EMPTY AS 
-    SELECT * FROM s3('{s3_url}', '{s3_user}', '{s3_pass}', 'Parquet');
+    SELECT * FROM {s3_function};
     """
     client.command(sql)
     print("Table 'default.logs_data' schema initialized.")
@@ -85,19 +93,7 @@ def task_stream_ingest():
     """Stream Parquet batches from S3 into ClickHouse to maintain low RAM usage."""
     client = get_clickhouse_client()
 
-    fs_kwargs = {
-        "access_key": os.getenv("AWS_ACCESS_KEY_ID", "admin"),
-        "secret_key": os.getenv("AWS_SECRET_ACCESS_KEY", "password"),
-        "region": os.getenv("AWS_DEFAULT_REGION", "us-west-1"),
-    }
-
-    storage_options = {
-        "aws_access_key_id": os.getenv("AWS_ACCESS_KEY_ID", "admin"),
-        "aws_secret_access_key": os.getenv("AWS_SECRET_ACCESS_KEY", "password"),
-        "aws_endpoint_url": S3_ENDPOINT,
-        "aws_region": os.getenv("AWS_DEFAULT_REGION", "us-west-1"),
-        "aws_allow_http": "true",
-    }
+    storage_options = get_s3_storage_options()
 
     s3_url = f"s3://{BUCKET_NAME}/{OBJECT_KEY}"
 
